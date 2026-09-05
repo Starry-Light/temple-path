@@ -1,0 +1,10 @@
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import { createSession, step, confirmMovement, toggleRest, OBSTACLES } from '../lib/session.ts';
+const approach=()=>{const s=createSession();s.mode='running';for(let i=0;i<1000&&s.mode==='running';i++)step(s,1/60);return s;};
+test('prompt holds every simulation value indefinitely',()=>{const s=approach();assert.equal(s.mode,'prompt');assert.equal(s.distance,OBSTACLES[0]-3.4);const frozen={...s};for(let i=0;i<100000;i++)assert.equal(step(s,10),0);assert.deepEqual(s,frozen);});
+test('only the requested movement releases a prompt and duplicate input is ignored',()=>{const s=approach();assert.equal(confirmMovement(s,'open'),false);assert.equal(s.mode,'prompt');assert.equal(confirmMovement(s,'close'),true);assert.equal(confirmMovement(s,'close'),false);step(s,.05);assert.equal(s.mode,'action');assert.ok(s.distance>16.6);});
+test('rest during a jump preserves action time and resumes exactly',()=>{const s=approach();confirmMovement(s,'close');step(s,.05);toggleRest(s);const snapshot={...s};for(let i=0;i<100;i++)step(s,.05);assert.deepEqual(s,snapshot);toggleRest(s);assert.equal(s.mode,'action');step(s,.05);assert.equal(s.actionTime,.1);});
+test('rest during a prompt returns to that prompt',()=>{const s=approach();toggleRest(s);assert.equal(confirmMovement(s,'close'),false);toggleRest(s);assert.equal(s.mode,'prompt');});
+test('six alternating movements complete the chapter without collisions or timer requirements',()=>{const s=createSession();s.mode='running';let prompts=0;for(let i=0;i<20000&&s.mode!=='complete';i++){if(s.mode==='prompt'){assert.equal(s.distance,OBSTACLES[s.index]-3.4);assert.ok(confirmMovement(s,s.index%2?'open':'close'));prompts++;}step(s,1/60);}assert.equal(prompts,6);assert.equal(s.completed,6);assert.equal(s.mode,'complete');const snapshot={...s};step(s,1);assert.deepEqual(s,snapshot);});
+test('long frames are capped and new sessions reset all progress',()=>{const s=createSession();s.mode='running';step(s,3600);assert.equal(s.distance,.2);assert.equal(createSession().distance,0);assert.equal(createSession().completed,0);});
