@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { Sky } from 'three/addons/objects/Sky.js';
+import { createCharacterMotion } from './character-motion';
 import { step, OBSTACLES, ACTION_DURATION, type Session } from './session';
 
 type Ref<T> = {current:T};
@@ -79,20 +80,18 @@ export async function createWorld(host:HTMLElement, state:Ref<Session>, notify:(
     else {for(const side of [-1,1]){box(.7,2.4,.8,side*2.15,1.2,z);box(.9,.22,1,side*2.15,2.5,z);}box(5.1,.58,.85,0,1.62,z);box(4.2,.045,.88,0,1.31,z,brass);}
   });
   // A single animated human asset, with simulation-driven animation time.
-  const runnerRoot=new THREE.Group();scene.add(runnerRoot);let mixer:THREE.AnimationMixer|undefined;
-  let run:THREE.AnimationAction|undefined;let idle:THREE.AnimationAction|undefined;
-  const bones:Record<string,THREE.Bone>={};
+  const runnerRoot=new THREE.Group();scene.add(runnerRoot);
+  let motion:ReturnType<typeof createCharacterMotion>|undefined;
   try{
     const gltf=await new GLTFLoader().loadAsync('/assets/runner.glb');const model=gltf.scene;
     const bounds=new THREE.Box3().setFromObject(model);const height=bounds.max.y-bounds.min.y;model.scale.setScalar(1.8/height);model.position.y=-bounds.min.y*(1.8/height);model.rotation.y=0;
-    model.traverse(o=>{if((o as THREE.Mesh).isMesh){o.castShadow=true;o.receiveShadow=true;}if((o as THREE.Bone).isBone)bones[o.name]=(o as THREE.Bone);});runnerRoot.add(model);
-    mixer=new THREE.AnimationMixer(model);const runClip=gltf.animations.find(c=>c.name==='Run')||gltf.animations[0];const idleClip=gltf.animations.find(c=>c.name==='Idle');
-    run=mixer.clipAction(runClip);run.play();if(idleClip){idle=mixer.clipAction(idleClip);idle.play();idle.setEffectiveWeight(0);}mixer.update(.2);ready();
+    model.traverse(o=>{if((o as THREE.Mesh).isMesh){o.castShadow=true;o.receiveShadow=true;}});runnerRoot.add(model);
+    motion=createCharacterMotion(model,gltf.animations);ready();
   }catch{fail('The explorer could not load. Please reload to try again.');}
-  let frame=0,last=performance.now(),previousMode=state.current.mode,previousDistance=0;
+  let frame=0,last=performance.now(),previousMode=state.current.mode;
   const resize=()=>{camera.aspect=host.clientWidth/host.clientHeight;camera.updateProjectionMatrix();renderer.setSize(host.clientWidth,host.clientHeight);};
   const observer=new ResizeObserver(resize);observer.observe(host);
-  const target=new THREE.Vector3();let lastAction=false;
+  const target=new THREE.Vector3();
   function animate(now:number){
     frame=requestAnimationFrame(animate);
     const s=state.current;const delta=Math.min((now-last)/1000,.05);last=now;
@@ -100,23 +99,24 @@ export async function createWorld(host:HTMLElement, state:Ref<Session>, notify:(
     const isAction=s.mode==='action'||(s.mode==='rest'&&s.resume==='action');
     const actionProgress=isAction?Math.min(s.actionTime/ACTION_DURATION,1):0;
     const arc=Math.sin(actionProgress*Math.PI);
-    // Mixer advances only with simulation time. No wall-clock catch-up after a pause.
-    if(mixer && (dt>0||s.distance<previousDistance||lastAction&&!isAction))mixer.setTime(s.time+.2);
-    if(run && idle){const idleWeight=s.mode==='complete'||s.mode==='ready'?1:0;idle.setEffectiveWeight(idleWeight);run.setEffectiveWeight(1-idleWeight);}
-    runnerRoot.position.set(0,isAction&&s.index%2===0?arc*1.5:0,-s.distance);
-    runnerRoot.rotation.x=isAction&&s.index%2===1?-arc*.8:0;
-    runnerRoot.scale.y=isAction&&s.index%2===1?1-arc*.35:1;
+    motion?.update(s,dt);
+    const crouch=isAction&&s.index%2===1 ? THREE.MathUtils.smoothstep(actionProgress,0,.16)*(1-THREE.MathUtils.smoothstep(actionProgress,.8,1)) : 0;
+    runnerRoot.position.set(0,isAction&&s.index%2===0?arc*1.5:-crouch*.48,-s.distance);
+    runnerRoot.rotation.x=0;
+    runnerRoot.scale.setScalar(1);
     const intro=s.mode==='ready';
     camera.position.set(intro?-6:0,intro?3.5:3.1,-s.distance+(intro?7.5:6.3));
     target.set(intro?1.2:0,intro?2.2:1.5,-s.distance-7);camera.lookAt(target);
     sun.position.set(-17,26,-s.distance-24);sun.target.position.set(0,0,-s.distance-8);
     if(s.mode!==previousMode){notify();previousMode=s.mode;}
-    previousDistance=s.distance;lastAction=isAction;
+
     renderer.render(scene,camera);
   }
   frame=requestAnimationFrame(animate);
   const contextLost=(event:Event)=>{event.preventDefault();if(['running','action','prompt'].includes(state.current.mode)){state.current.resume=state.current.mode;state.current.mode='rest';notify();}fail('3D graphics were interrupted. Reload to restart the journey.');};renderer.domElement.addEventListener('webglcontextlost',contextLost);
-  return ()=>{cancelAnimationFrame(frame);observer.disconnect();renderer.domElement.removeEventListener('webglcontextlost',contextLost);mixer?.stopAllAction();const geometries=new Set<THREE.BufferGeometry>(),materials=new Set<THREE.Material>();scene.traverse(o=>{const m=o as THREE.Mesh;if(m.isMesh){geometries.add(m.geometry);(Array.isArray(m.material)?m.material:[m.material]).forEach(v=>materials.add(v));}});geometries.forEach(g=>g.dispose());materials.forEach(m=>{Object.values(m).forEach(v=>{if(v instanceof THREE.Texture)v.dispose();});m.dispose();});textures.forEach(t=>t.dispose());env.dispose();renderer.dispose();renderer.domElement.remove();};
+  return ()=>{cancelAnimationFrame(frame);observer.disconnect();renderer.domElement.removeEventListener('webglcontextlost',contextLost);motion?.dispose();const geometries=new Set<THREE.BufferGeometry>(),materials=new Set<THREE.Material>();scene.traverse(o=>{const m=o as THREE.Mesh;if(m.isMesh){geometries.add(m.geometry);(Array.isArray(m.material)?m.material:[m.material]).forEach(v=>materials.add(v));}});geometries.forEach(g=>g.dispose());materials.forEach(m=>{Object.values(m).forEach(v=>{if(v instanceof THREE.Texture)v.dispose();});m.dispose();});textures.forEach(t=>t.dispose());env.dispose();renderer.dispose();renderer.domElement.remove();};
 }
+
+
 
 
