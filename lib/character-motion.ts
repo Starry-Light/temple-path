@@ -14,7 +14,7 @@ export function createCharacterMotion(model:THREE.Object3D, clips:THREE.Animatio
   idle.stop();
   const run=mixer.clipAction(clips.find(c=>c.name==='Run')||clips[0]).play();
   mixer.update(.2);
-  let takeoff=capture(),wasAction=false,runTime=.2,lastDistance=0;
+  let takeoff=capture(),wasAction=false,lastDistance=0;
   const makePose=(slide:boolean):Pose=>neutral.map(p=>{
     const pose={...p,position:p.position.clone(),rotation:p.rotation.clone()};
     const name=p.bone.name.replace(/^mixamorig[:]?/,'');
@@ -30,7 +30,7 @@ export function createCharacterMotion(model:THREE.Object3D, clips:THREE.Animatio
   return {
     update(s:Session,dt:number){
       const action=s.mode==='action'||(s.mode==='rest'&&s.resume==='action');
-      if(s.distance<lastDistance){runTime=.2;wasAction=false;}
+      if(s.distance<lastDistance){run.reset().play();mixer.update(.2);wasAction=false;}
       if(action&&!wasAction)takeoff=capture();
       if(action){
         // Sample a single takeoff pose: the running clip never advances in the air.
@@ -39,10 +39,11 @@ export function createCharacterMotion(model:THREE.Object3D, clips:THREE.Animatio
         const target=s.index%2===0?jump:slide;
         target.forEach((pose,i)=>{pose.bone.position.lerpVectors(takeoff[i].position,pose.position,blend);pose.bone.quaternion.slerpQuaternions(takeoff[i].rotation,pose.rotation,blend);});
       }else if(dt>0||wasAction||s.distance<lastDistance){
-        runTime+=dt;run.time=runTime; mixer.update(0);
+        mixer.update(dt);
       }
       wasAction=action;lastDistance=s.distance;
     },
     dispose(){mixer.stopAllAction();mixer.uncacheRoot(model);}
   };
 }
+
