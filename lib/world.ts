@@ -80,7 +80,7 @@ export async function createWorld(host:HTMLElement, state:Ref<Session>, notify:(
   const coinFace=new THREE.CylinderGeometry(.42,.42,.145,48);
   const coinRing=new THREE.TorusGeometry(.49,.045,12,48);
   COIN_POSITIONS.forEach((distance,i)=>{
-    const coin=new THREE.Group();coin.position.set(0,1.28,-distance);coin.userData.baseY=coin.position.y;
+    const coin=new THREE.Group();coin.position.set(i%2===0?-1.45:1.45,1.28,-distance);coin.userData.baseY=coin.position.y;
     const body=new THREE.Mesh(coinBody,coinGold);body.rotation.x=Math.PI/2;body.castShadow=true;
     const face=new THREE.Mesh(coinFace,coinInset);face.rotation.x=Math.PI/2;face.castShadow=true;
     const ring=new THREE.Mesh(coinRing,coinInset);ring.castShadow=true;

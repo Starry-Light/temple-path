@@ -4,8 +4,8 @@ export const COIN_POSITIONS = [20,45,70,95,120,145];
 export const SPEED = 4;
 export const ACTION_DURATION = 1.2;
 export function createSession():Session {return {mode:'ready',resume:'running',distance:0,index:0,coins:0,actionTime:0,time:0};}
-export function confirmMovement(s:Session, kind:'close'|'open') {
-  if(s.mode!=='prompt' || kind!==(s.index%2===0?'close':'open'))return false;
+export function confirmMovement(s:Session, hand:'left'|'right') {
+  if(s.mode!=='prompt' || hand!==(s.index%2===0?'left':'right'))return false;
   s.mode='action';s.actionTime=0;return true;
 }
 export function toggleRest(s:Session) {
