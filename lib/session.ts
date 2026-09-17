@@ -1,9 +1,9 @@
 export type Mode = 'ready'|'running'|'prompt'|'action'|'rest'|'complete';
-export type Session = {mode:Mode;resume:Mode;distance:number;index:number;completed:number;actionTime:number;time:number};
-export const OBSTACLES = [20,45,70,95,120,145];
+export type Session = {mode:Mode;resume:Mode;distance:number;index:number;coins:number;actionTime:number;time:number};
+export const COIN_POSITIONS = [20,45,70,95,120,145];
 export const SPEED = 4;
-export const ACTION_DURATION = 1.7;
-export function createSession():Session {return {mode:'ready',resume:'running',distance:0,index:0,completed:0,actionTime:0,time:0};}
+export const ACTION_DURATION = 1.2;
+export function createSession():Session {return {mode:'ready',resume:'running',distance:0,index:0,coins:0,actionTime:0,time:0};}
 export function confirmMovement(s:Session, kind:'close'|'open') {
   if(s.mode!=='prompt' || kind!==(s.index%2===0?'close':'open'))return false;
   s.mode='action';s.actionTime=0;return true;
@@ -15,15 +15,15 @@ export function toggleRest(s:Session) {
 export function step(s:Session, rawDt:number) {
   if(s.mode!=='running' && s.mode!=='action')return 0;
   let dt=Math.max(0,Math.min(rawDt,0.05));
-  if(s.mode==='running' && s.index<OBSTACLES.length){
-    const remaining=(OBSTACLES[s.index]-3.4-s.distance)/SPEED;
+  if(s.mode==='running' && s.index<COIN_POSITIONS.length){
+    const remaining=(COIN_POSITIONS[s.index]-3.4-s.distance)/SPEED;
     if(dt>=remaining){dt=Math.max(0,remaining);s.mode='prompt';}
   }
   s.time+=dt;s.distance+=SPEED*dt;
   if(s.mode==='action'){
     s.actionTime+=dt;
-    if(s.actionTime>=ACTION_DURATION){s.completed++;s.index++;s.actionTime=0;s.mode='running';}
+    if(s.actionTime>=ACTION_DURATION){s.coins++;s.index++;s.actionTime=0;s.mode='running';}
   }
-  if(s.index>=OBSTACLES.length && s.distance>=157)s.mode='complete';
+  if(s.index>=COIN_POSITIONS.length && s.distance>=157)s.mode='complete';
   return dt;
 }

@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { Sky } from 'three/addons/objects/Sky.js';
 import { createCharacterMotion } from './character-motion';
-import { step, OBSTACLES, ACTION_DURATION, type Session } from './session';
+import { step, COIN_POSITIONS, ACTION_DURATION, type Session } from './session';
 
 type Ref<T> = {current:T};
 export async function createWorld(host:HTMLElement, state:Ref<Session>, notify:()=>void, ready:()=>void, fail:(s:string)=>void, quality:Ref<(high:boolean)=>void>) {
@@ -30,7 +30,8 @@ export async function createWorld(host:HTMLElement, state:Ref<Session>, notify:(
   const darkStone=stone.clone();darkStone.color.set('#69735d');
   const ground=new THREE.MeshStandardMaterial({map:groundMap,normalMap:groundNormal,roughness:1,color:'#9aa07a'});
   const bark=stone.clone();bark.color.set('#554936');
-  const brass=new THREE.MeshStandardMaterial({color:'#b79a59',metalness:.65,roughness:.6});
+  const coinGold=new THREE.MeshStandardMaterial({color:'#ffd45f',emissive:'#7f4600',emissiveIntensity:.45,metalness:.86,roughness:.24});
+  const coinInset=new THREE.MeshStandardMaterial({color:'#fff0a0',emissive:'#9b5c00',emissiveIntensity:.34,metalness:.72,roughness:.3});
   const baseBox=new THREE.BoxGeometry(1,1,1);
   const box=(w:number,h:number,d:number,x:number,y:number,z:number,mat:THREE.Material=stone,parent:THREE.Object3D=scene)=>{const m=new THREE.Mesh(baseBox,mat);m.scale.set(w,h,d);m.position.set(x,y,z);m.castShadow=m.receiveShadow=true;parent.add(m);return m;};
   const floor=new THREE.Mesh(new THREE.PlaneGeometry(150,300),ground);floor.rotation.x=-Math.PI/2;floor.position.set(0,-.22,-90);floor.receiveShadow=true;scene.add(floor);
@@ -74,10 +75,17 @@ export async function createWorld(host:HTMLElement, state:Ref<Session>, notify:(
   const grassGeo=new THREE.ConeGeometry(.16,.85,3);grassGeo.translate(0,.38,0);
   const grass=new THREE.InstancedMesh(grassGeo,new THREE.MeshStandardMaterial({color:'#596e32',roughness:1}),2200);
   for(let i=0;i<2200;i++){const side=i%2?1:-1;dummy.position.set(side*(2.9+random()*12),-.15,12-random()*204);dummy.scale.set(.6+random(),.5+random(),.6+random());dummy.rotation.set((random()-.5)*.4,random()*6,(random()-.5)*.4);dummy.updateMatrix();grass.setMatrixAt(i,dummy.matrix);}grass.receiveShadow=true;scene.add(grass);
-  OBSTACLES.forEach((distance,i)=>{
-    const z=-distance;
-    if(i%2===0){for(let j=-1;j<=1;j++){const m=box(1.58,.64,.75,j*1.61,.32,z);m.rotation.y=(random()-.5)*.1;box(1.5,.055,.77,j*1.61,.67,z,brass);}}
-    else {for(const side of [-1,1]){box(.7,2.4,.8,side*2.15,1.2,z);box(.9,.22,1,side*2.15,2.5,z);}box(5.1,.58,.85,0,1.62,z);box(4.2,.045,.88,0,1.31,z,brass);}
+  const coinGroups:THREE.Group[]=[];
+  const coinBody=new THREE.CylinderGeometry(.58,.58,.13,48);
+  const coinFace=new THREE.CylinderGeometry(.42,.42,.145,48);
+  const coinRing=new THREE.TorusGeometry(.49,.045,12,48);
+  COIN_POSITIONS.forEach((distance,i)=>{
+    const coin=new THREE.Group();coin.position.set(0,1.28,-distance);coin.userData.baseY=coin.position.y;
+    const body=new THREE.Mesh(coinBody,coinGold);body.rotation.x=Math.PI/2;body.castShadow=true;
+    const face=new THREE.Mesh(coinFace,coinInset);face.rotation.x=Math.PI/2;face.castShadow=true;
+    const ring=new THREE.Mesh(coinRing,coinInset);ring.castShadow=true;
+    const mark=box(.11,.48,.17,0,0,.08,coinGold,coin);mark.rotation.z=i%2?Math.PI/4:-Math.PI/4;
+    coin.add(body,face,ring);scene.add(coin);coinGroups.push(coin);
   });
   // A single animated human asset, with simulation-driven animation time.
   const runnerRoot=new THREE.Group();scene.add(runnerRoot);
@@ -98,12 +106,20 @@ export async function createWorld(host:HTMLElement, state:Ref<Session>, notify:(
     const dt=step(s,delta);
     const isAction=s.mode==='action'||(s.mode==='rest'&&s.resume==='action');
     const actionProgress=isAction?Math.min(s.actionTime/ACTION_DURATION,1):0;
-    const arc=Math.sin(actionProgress*Math.PI);
     motion?.update(s,dt);
-    const crouch=isAction&&s.index%2===1 ? THREE.MathUtils.smoothstep(actionProgress,0,.16)*(1-THREE.MathUtils.smoothstep(actionProgress,.8,1)) : 0;
-    runnerRoot.position.set(0,isAction&&s.index%2===0?arc*1.5:-crouch*.48,-s.distance);
+    runnerRoot.position.set(0,0,-s.distance);
     runnerRoot.rotation.x=0;
     runnerRoot.scale.setScalar(1);
+    coinGroups.forEach((coin,i)=>{
+      const collected=i<s.index;
+      const collecting=isAction&&i===s.index;
+      coin.visible=!collected;
+      if(!coin.visible)return;
+      coin.rotation.y=s.time*2.5+i*.35;
+      const eased=collecting?THREE.MathUtils.smoothstep(actionProgress,.05,.92):0;
+      coin.position.y=coin.userData.baseY+Math.sin(s.time*3+i)*.08+eased*1.1;
+      coin.scale.setScalar(Math.max(.001,1-eased));
+    });
     const intro=s.mode==='ready';
     camera.position.set(intro?-6:0,intro?3.5:3.1,-s.distance+(intro?7.5:6.3));
     target.set(intro?1.2:0,intro?2.2:1.5,-s.distance-7);camera.lookAt(target);
